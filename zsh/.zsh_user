@@ -1,0 +1,105 @@
+################
+# Personal Stuff
+
+## Secrets
+source ~/.secrets
+
+
+## Aliases
+# Set personal aliases, overriding those provided by oh-my-zsh libs,
+# plugins, and themes. Aliases can be placed here, though oh-my-zsh
+# users are encouraged to define aliases within the ZSH_CUSTOM folder.
+# For a full list of active aliases, run `alias`.
+
+# Directory
+alias cdw="cd ~/Workspace"
+alias cdl="cd ~/Workspace/Lives"
+alias ..="cd .."
+alias ...="cd ../.."
+alias ....="cd ../../.."
+alias .....="cd ../../../.."
+alias ......="cd ../../../../.."
+
+# Display
+alias ll='ls -lh --color'
+alias lla='ls -alh --color'
+
+# System
+alias v="nvim"
+alias n="nvim"
+
+# Google
+alias glogin="gcloud auth login"
+alias gapp="gcloud auth application-default login"
+
+
+# k8s
+alias kctx="kubectl ctx"
+alias kns="kubectl ns"
+
+# FZF
+#export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow'
+#[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# STOW
+#alias stow="stow -d ~/dotfiles"
+export STOW_DIR=~/dotfiles
+
+# Builds
+alias mvn-sym="mvnd clean package install -P Symphony,SharedResources -Dbuild.rpm=false -DskipTests=true -DsymphonySkipIntegrationTests=true -DsymphonySkipUnitTests=true -Dmaven.test.skip.exec=true"
+alias mvn-sym-test="mvnd clean package install -P Symphony,SharedResources -Dbuild.rpm=false -DsymphonySkipIntegrationTests=true"
+alias mvn-sym-test-w="mvnd clean package install -P Symphony,SharedResources -Dbuild.rpm=false -DsymphonySkipIntegrationTests=true -Dmaven.surefire.debug=\"-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=localhost:5005\""
+
+# Mostly for Local Dev
+export ARTIFACTORY_USERNAME=${USER_EMAIL}
+
+
+check-git-repository() {
+	git rev-parse --is-inside-work-tree >/dev/null || (echo "Not in a git repository" && return 1)
+}
+
+git-delete-branches() {
+	check-git-repository || return 1
+
+	git branch --no-color | fzf -m | xargs -I {} git branch -D '{}'
+}
+
+git-clean-branches() {
+	check-git-repository || return 1
+
+	git fetch -p
+	git branch -vv | grep "gone]" | grep -i -v -E "main|dev|master" |  awk '{print $1}' | xargs git branch -D
+}
+
+fork-remote-add() {
+	check-git-repository || return 1
+
+	UPSTREAM=$(echo $(git remote get-url origin) | sed "s/:${USER_GITHUB}/:SymphonyOSF/")
+
+	echo "Adding upstream: ${UPSTREAM}" && git remote add upstream ${UPSTREAM} || echo "ERROR # Adding upstream failed" 
+}
+
+fork-reset() {
+	check-git-repository || return 1
+
+	GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+	echo "# Cleaning all files" && git clean -q -fdx
+	echo "# Fetching info for origin" && git fetch -q -p origin
+	echo "# Fetching info for upstream" && git fetch -q -p upstream
+	echo "# Pulling upstream branch ${GIT_BRANCH} into local and reset" && git reset -q --hard upstream/${GIT_BRANCH}
+	echo "# Pushing to fork" && git push -q -f origin ${GIT_BRANCH}
+}
+
+mongo-compass-tunnel() {
+	MONGO_GCP_PROJECT=$1
+
+	if [ -z "${MONGO_GCP_PROJECT}" ]; then
+		echo "Usage: mongo-compass-tunnel {google data project}"
+	fi
+
+	echo "Connecting to GCP Project ${MONGO_GCP_PROJECT}"
+	MONGO_BASTION_HOST=$(gcloud compute instances list --project ${MONGO_GCP_PROJECT} --filter="name~'bastion'" --format="value(name)")
+	echo "Using Bastion ${MONGO_BASTION_HOST}"
+
+	gcloud compute ssh ${MONGO_BASTION_HOST} --project ${MONGO_GCP_PROJECT} -- -D 54321 -N
+}

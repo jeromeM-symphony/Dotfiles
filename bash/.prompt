@@ -1,0 +1,518 @@
+alias ll="ls -hl --color=auto"
+alias lla="ls -ahl --color=auto"
+alias grep="grep --color"
+
+################################################################################
+# Description : Inspired by Liquid prompt, cleaned for unused features.
+# Author      : Jerome MICHEL T0190773
+# Email       : jerome.michel@fr.thalesgroup.com
+################################################################################
+
+# Issue #161: do not load if not an interactive shell
+test -z "$TERM" -o "x$TERM" = xdumb && return
+
+# Symbols used in PS1 directly
+_OPEN_ESC="\001"
+_CLOSE_ESC="\002"
+
+_USER_SYMBOL="\u"
+_HOST_SYMBOL="\h"
+_LOCAL_HOST_SYMBOL="."
+_FQDN_SYMBOL="\H"
+_TIME_SYMBOL="\t"
+_MARK_SYMBOL='\$'
+_MARK_SYMBOL_ROOT='\#'
+_PWD_SYMBOL="\\w"
+_DIR_SYMBOL="\\W"
+
+_PERCENT='%'    # must be escaped on zsh
+_BACKSLASH='\\' # must be escaped on bash
+
+# Escape the given strings
+# Must be used for all strings injected in PS1 that may comes from remote sources,
+# like $PWD, VCS branch names...
+_pr_escape()
+{
+    echo -nE "${1//\\/\\\\}"
+}
+
+
+#####################
+# OS specific stuff #
+#####################
+case $(uname) in
+    Darwin)    LP_OS=Darwin  ;;
+    *)         LP_OS=Linux   ;;
+esac
+
+# Extended regexp patterns for sed
+# GNU/BSD sed
+_LP_SED_EXTENDED=r
+[[ "$LP_OS" = Darwin ]] && _LP_SED_EXTENDED=E
+
+# update_terminal_cwd is a shell function available on MacOS X Lion that
+# will update an icon of the directory displayed in the title of the terminal
+# window.
+# See http://hints.macworld.com/article.php?story=20110722211753852
+if [[ "${TERM_PROGRAM-}" == Apple_Terminal ]] && command -v update_terminal_cwd >/dev/null; then
+    _PR_TERM_UPDATE_DIR=update_terminal_cwd
+    # Remove "update_terminal_cwd; " that has been add by Apple in /et/bashrc.
+    # See issue #196
+    PROMPT_COMMAND="${PROMPT_COMMAND//update_terminal_cwd; /}"
+else
+    _PR_TERM_UPDATE_DIR=:
+fi
+
+
+#################
+# CONFIGURATION #
+#################
+
+# The following code is run just once. But it is encapsulated in a function
+# to benefit of 'local' variables.
+_pr_source_config()
+{
+    # Colors: variables are local so they will have a value only
+    # during config loading and will not conflict with other values
+    # with the same names defined by the user outside the config.
+    local BLACK="$_OPEN_ESC\033[38;5;0m$_CLOSE_ESC"
+    local BOLD_GRAY="$_OPEN_ESC\033[38;5;240m$_CLOSE_ESC"
+    local WHITE="$_OPEN_ESC\033[38;5;7m$_CLOSE_ESC"
+    local BOLD_WHITE="$_OPEN_ESC\033[1m\033[38;5;7m$_CLOSE_ESC"
+
+    local RED="$_OPEN_ESC\033[38;5;9m$_CLOSE_ESC"
+    local BOLD_RED="$_OPEN_ESC\033[1m\033[38;5;9m$_CLOSE_ESC"
+    local WARN_RED="$_OPEN_ESC\033[1m\033[38;5;0m\033[48;5;1m$_CLOSE_ESC"
+
+    local ORANGE="$_OPEN_ESC\033[38;5;208m$_CLOSE_ESC"
+
+    local GREEN="$_OPEN_ESC\033[38;5;2m$_CLOSE_ESC"
+    local BOLD_GREEN="$_OPEN_ESC\033[1m\033[38;5;2m$_CLOSE_ESC"
+
+    local YELLOW="$_OPEN_ESC\033[38;5;3m$_CLOSE_ESC"
+    local BOLD_YELLOW="$_OPEN_ESC\033[1m\033[38;5;3m$_CLOSE_ESC"
+
+    local BLUE="$_OPEN_ESC\033[38;5;12m$_CLOSE_ESC"
+    local BOLD_BLUE="$_OPEN_ESC\033[1m\033[38;5;12m$_CLOSE_ESC"
+
+    local PURPLE="$_OPEN_ESC\033[38;5;5m$_CLOSE_ESC"
+    local PINK="$_OPEN_ESC\033[1m\033[38;5;5m$_CLOSE_ESC"
+
+    local CYAN="$_OPEN_ESC\033[38;5;6m$_CLOSE_ESC"
+
+    # NO_COL is special: it will be used at runtime, not just during config loading
+    NO_COL="$_OPEN_ESC\e[0m$_CLOSE_ESC"
+
+    # compute the hash of the hostname
+    # and get the corresponding number in [1-6] (red,green,yellow,blue,purple or cyan)
+    # FIXME Add more formats (bold? 256 colors?)
+    # cksum is separated with tab on SunOS, space on others
+    local cksum="$(hostname | cksum)"
+    PR_COLOR_HOST_HASH="$_OPEN_ESC\033[38;5;$(( 1 + ${cksum%%[ 	]*} % 6 ))m$_CLOSE_ESC"
+
+
+    # Default values (globals)
+    PR_PATH_LENGTH=20
+    PR_PATH_KEEP=1
+    PR_PATH_DEFAULT="$_DIR_SYMBOL"
+
+    PR_MARK_DEFAULT="$_MARK_SYMBOL"
+    PR_MARK_BRACKET_OPEN="["
+    PR_MARK_BRACKET_CLOSE="]"
+    PR_MARK_PREFIX=" "
+    PR_MARK_PERM=":"
+
+    # Colors by Category
+    PR_COLOR_TIME=$ORANGE
+
+    PR_COLOR_PATH=$BOLD_WHITE
+    PR_COLOR_PATH_ROOT=$BOLD_YELLOW
+    PR_COLOR_JOB_D=$YELLOW
+    PR_COLOR_JOB_R=$BOLD_YELLOW
+    PR_COLOR_JOB_Z=$BOLD_YELLOW
+
+    LP_COLOR_ERR=$PURPLE
+
+    PR_COLOR_MARK=$BOLD_WHITE
+    PR_COLOR_MARK_ROOT=$BOLD_RED
+    PR_COLOR_MARK_SUDO=$PR_COLOR_MARK_ROOT
+
+    PR_COLOR_USER_LOGGED=$BLUE
+    PR_COLOR_USER_ALT=$BOLD_WHITE
+    PR_COLOR_USER_ROOT=$WARN_RED
+
+    PR_COLOR_HOST=$WHITE
+    PR_COLOR_SSH=$BLUE
+    PR_COLOR_SU=$BOLD_YELLOW
+    PR_COLOR_TELNET=$WARN_RED
+
+    PR_COLOR_X11_ON=$GREEN
+    PR_COLOR_X11_OFF=$YELLOW
+
+    PR_COLOR_WRITE=$GREEN
+    PR_COLOR_NOWRITE=$RED
+
+    PR_COLOR_UP=$GREEN
+    PR_COLOR_COMMITS=$YELLOW
+    PR_COLOR_COMMITS_BEHIND=$BOLD_RED
+    PR_COLOR_CHANGES=$RED
+    PR_COLOR_DIFF=$PURPLE
+
+    PR_COLOR_IN_MULTIPLEXER=$BOLD_BLUE
+}
+# do source config files
+_pr_source_config
+unset -f _lp_source_config
+
+################################################################################
+# Static stuff
+#
+# Due to inability to use PROMPT_COMMAND, we must define 'static', or one-per-
+# session defined stuff, and 'dynamic' parts of the prompt which will be
+# evaluated each PS1.
+
+################
+# CURRENT TIME #
+################
+# PR_TIME colored
+PR_TIME="${PR_COLOR_TIME}${_TIME_SYMBOL}${NO_COL}"
+
+
+############
+# BRACKETS #
+############
+# If we are running in a terminal multiplexer, brackets are colored
+if [[ "$TERM" == screen* ]]; then
+    PR_BRACKET_OPEN="${PR_COLOR_IN_MULTIPLEXER}${PR_MARK_BRACKET_OPEN}${NO_COL}"
+    PR_BRACKET_CLOSE="${PR_COLOR_IN_MULTIPLEXER}${PR_MARK_BRACKET_CLOSE}${NO_COL}"
+else
+    PR_BRACKET_OPEN="${PR_MARK_BRACKET_OPEN}"
+    PR_BRACKET_CLOSE="${PR_MARK_BRACKET_CLOSE}"
+fi
+
+
+###############
+# Who are we? #
+###############
+command -v _pr_sudo_check >/dev/null && unset -f _pr_sudo_check
+
+# Yellow for root, bold if the user is not the login one, else no color.
+if (( EUID != 0 )); then  # if user is not root
+    # if user is not login user
+    if [[ "${USER}" != "$(logname 2>/dev/null || echo "$LOGNAME")" ]]; then
+        PR_USER="${PR_COLOR_USER_ALT}${_USER_SYMBOL}${NO_COL}"
+    else
+        PR_USER="${PR_COLOR_USER_LOGGED}${_USER_SYMBOL}${NO_COL}"
+    fi
+    # "sudo -n" is only supported from sudo 1.7.0
+    if command -v sudo >/dev/null \
+        && LC_MESSAGES=C sudo -V | GREP_OPTIONS= \grep -qE '^Sudo version (1(\.([789]\.|[1-9][0-9])|[0-9])|[2-9])'
+    then
+        # Test the code with the commands:
+        #   sudo id   # sudo, enter your credentials
+        #   sudo -K   # revoke your credentials
+        _pr_sudo_check()
+        {
+            if sudo -n true 2>/dev/null; then
+                PR_COLOR_MARK=$PR_COLOR_MARK_SUDO
+            else
+                PR_COLOR_MARK=$PR_COLOR_MARK
+            fi
+        }
+    fi
+    PR_MARK="${_MARK_SYMBOL}"
+else # root!
+    PR_USER="${PR_COLOR_USER_ROOT}${_USER_SYMBOL}${NO_COL}"
+    PR_COLOR_MARK="${PR_COLOR_MARK_ROOT}"
+    PR_COLOR_PATH="${PR_COLOR_PATH_ROOT}"
+    PR_MARK="${_MARK_SYMBOL_ROOT}"
+fi
+
+# Empty _pr_sudo_check if root or sudo disabled
+if ! command -v _pr_sudo_check >/dev/null; then
+    _pr_sudo_check() { :; }
+fi
+
+
+# Put the hostname if not locally connected
+# color it in cyan within SSH, and a warning red if within telnet
+# else display the host without color
+# The connection is not expected to change from inside the shell, so we
+# build this just once
+_pr_connection()
+{
+    if [[ -n "${SSH_CLIENT-}${SSH2_CLIENT-}${SSH_TTY-}" ]]; then
+        echo ssh
+    else
+        # tmux: see GH #304
+        # TODO check on *BSD
+        local whoami="$(LC_ALL=C who am i)"
+        local sess_parent="$(ps -o comm= -p $PPID 2> /dev/null)"
+        if [[ x"$whoami" != *'('* || x"$whoami" = *'(:'* || x"$whoami" = *'(tmux'* ]]; then
+            echo lcl  # Local
+        elif [[ "$sess_parent" = "su" || "$sess_parent" = "sudo" ]]; then
+            echo su   # Remote su/sudo
+        else
+            echo tel  # Telnet
+        fi
+    fi
+}
+
+PR_HOST=""
+
+[[ -r /etc/debian_chroot ]] && PR_HOST="($(< /etc/debian_chroot))"
+
+# If we are connected with a X11 support
+if [[ -n "$DISPLAY" ]]; then
+    PR_HOST="${PR_COLOR_X11_ON}${PR_HOST}@${NO_COL}"
+else
+    PR_HOST="${PR_COLOR_X11_OFF}${PR_HOST}@${NO_COL}"
+fi
+
+case "$(_pr_connection)" in
+lcl) # Local
+    PR_HOST+="${PR_COLOR_HOST}${_LOCAL_HOST_SYMBOL}${NO_COL}"
+    ;;
+ssh)
+    # If we want a different color for each host
+    # PR_COLOR_SSH="$PR_COLOR_HOST_HASH"
+    PR_HOST+="${PR_COLOR_SSH}${_HOST_SYMBOL}${NO_COL}"
+    ;;
+su)
+    PR_HOST+="${PR_COLOR_SU}${_HOST_SYMBOL}${NO_COL}"
+    ;;
+tel)
+    PR_HOST+="${PR_COLOR_TELNET}${_HOST_SYMBOL}${NO_COL}"
+    ;;
+*)
+    PR_HOST+="${_HOST_SYMBOL}" # No used case, but just in case ...
+    ;;
+esac
+
+
+########
+# PATH #
+########
+# Default value for PR_PERM when LP_ENABLE_PERM is 0
+PR_PERM=${PR_MARK_PERM}   # without color
+
+PR_PWD="${PR_COLOR_PATH}${PR_PATH_DEFAULT}${NO_COL}"
+
+
+
+################################################################################
+# Dynamic stuff
+#
+# Due to inability to use PROMPT_COMMAND, we must define 'static', or one-per-
+# session defined stuff, and 'dynamic' parts of the prompt which will be
+# evaluated each PS1.
+# This dynamic stuff must be as fast as possible
+
+################
+# Related jobs #
+################
+# Display the count of each if non-zero:
+# - detached screens sessions and/or tmux sessions running on the host
+# - attached running jobs (started with $ myjob &)
+# - attached stopped jobs (suspended with Ctrl-Z)
+_pr_jobcount()
+{
+    local ret=""
+    local -i r s
+
+    # Count detached sessions
+    local -i detached=0
+    detached=$(screen -ls 2> /dev/null | \grep -c '[Dd]etach[^)]*)$')
+    detached+=$(tmux list-sessions 2> /dev/null | \grep -cv 'attached')
+    (( detached > 0 )) && ret+="${PR_COLOR_JOB_D}${detached}d${NO_COL}"
+
+    # Count running jobs
+    if (( r = $(jobs -r | wc -l) )); then
+        [[ -n "$ret" ]] && ret+='/'
+        ret+="${PR_COLOR_JOB_R}${r}&${NO_COL}"
+    fi
+
+    # Count stopped jobs
+    if (( s = $(jobs -s | wc -l) )); then
+        [[ -n "$ret" ]] && ret+='/'
+        ret+="${PR_COLOR_JOB_Z}${s}z${NO_COL}"
+    fi
+
+    [[ -n "$ret" ]] && printf "$ret "
+    #echo -e "\033[1ma\033[0m"
+}
+
+
+#######################
+# Can we write here ? #
+#######################
+_pr_perm()
+{
+  # PR_PERM: shows a ":"
+  # - colored in green if user has write permission on the current dir
+  # - colored in red if not
+  # - can set another symbol with PR_MARK_PERM
+  if [ -w `pwd` ]; then
+      printf "${PR_COLOR_WRITE}${PR_MARK_PERM}${NO_COL}"
+  else
+      printf "${PR_COLOR_NOWRITE}${PR_MARK_PERM}${NO_COL}"
+  fi
+}
+
+
+######################
+# VCS branch display #
+######################
+# GIT #
+# Get the branch name of the current directory
+_pr_git_branch()
+{
+    \git rev-parse --abbrev-ref HEAD 2>/dev/null
+}
+
+# Display additional information if HEAD is in merging, rebasing
+# or cherry-picking state
+_pr_git_head_status() {
+    local gitdir
+    gitdir="$(\git rev-parse --git-dir 2>/dev/null)"
+    if [[ -f "${gitdir}/MERGE_HEAD" ]]; then
+        echo " MERGING"
+    elif [[ -d "${gitdir}/rebase-apply" || -d "${gitdir}/rebase-merge" ]]; then
+        echo " REBASING"
+    elif [[ -f "${gitdir}/CHERRY_PICK_HEAD" ]]; then
+        echo " CHERRY-PICKING"
+    fi
+}
+
+# Set a color depending on the branch state:
+# - green if the repository is up to date
+# - yellow if there is some commits not pushed
+# - red if there is changes to commit
+#
+# Add the number of pending commits and the impacted lines.
+_pr_git_branch_color()
+{
+    local branch
+    branch="$(\git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    if [[ -n "$branch" ]]; then
+
+        local end
+        end="${PR_COLOR_CHANGES}$(_pr_git_head_status)${NO_COL}"
+
+        # There are a lot f features in the WIP section but no time ...
+
+        printf " ${PR_COLOR_UP}$branch$end"
+    fi
+}
+
+
+_TODO_WIP_GIT_AHEAD-BEHIND()
+{
+  local remote
+  remote="$(\git config --get branch.${branch}.remote 2>/dev/null)"
+
+  local has_commit=""
+  local commit_ahead
+  local commit_behind
+  if [[ -n "$remote" ]]; then
+      local remote_branch
+      remote_branch="$(\git config --get branch.${branch}.merge)"
+      if [[ -n "$remote_branch" ]]; then
+          remote_branch=${remote_branch/refs\/heads/refs\/remotes\/$remote}
+          commit_ahead="$(\git rev-list --count $remote_branch..HEAD 2>/dev/null)"
+          commit_behind="$(\git rev-list --count HEAD..$remote_branch 2>/dev/null)"
+          if [[ "$commit_ahead" -ne "0" && "$commit_behind" -ne "0" ]]; then
+              has_commit="${PR_COLOR_COMMITS}+$commit_ahead${NO_COL}/${PR_COLOR_COMMITS_BEHIND}-$commit_behind${NO_COL}"
+          elif [[ "$commit_ahead" -ne "0" ]]; then
+              has_commit="${PR_COLOR_COMMITS}$commit_ahead${NO_COL}"
+          elif [[ "$commit_behind" -ne "0" ]]; then
+              has_commit="${PR_COLOR_COMMITS_BEHIND}-$commit_behind${NO_COL}"
+          fi
+      fi
+  fi
+
+  local ret
+  local shortstat # only to check for uncommitted changes
+  shortstat="$(LC_ALL=C \git diff --shortstat HEAD 2>/dev/null)"
+
+  if [[ -n "$shortstat" ]]; then
+      local u_stat # shorstat of *unstaged* changes
+      u_stat="$(LC_ALL=C \git diff --shortstat 2>/dev/null)"
+      u_stat=${u_stat/*changed, /} # removing "n file(s) changed"
+
+      local i_lines # inserted lines
+      if [[ "$u_stat" = *insertion* ]]; then
+          i_lines=${u_stat/ inser*}
+      else
+          i_lines=0
+      fi
+
+      local d_lines # deleted lines
+      if [[ "$u_stat" = *deletion* ]]; then
+          d_lines=${u_stat/*\(+\), }
+          d_lines=${d_lines/ del*/}
+      else
+          d_lines=0
+      fi
+
+      local has_lines
+      has_lines="+$i_lines/-$d_lines"
+
+      if [[ -n "$has_commit" ]]; then
+          # Changes to commit and commits to push
+          ret="${PR_COLOR_CHANGES}${branch}${NO_COL}(${PR_COLOR_DIFF}$has_lines${NO_COL},$has_commit)"
+      else
+          ret="${PR_COLOR_CHANGES}${branch}${NO_COL}(${PR_COLOR_DIFF}$has_lines${NO_COL})" # changes to commit
+      fi
+  elif [[ -n "$has_commit" ]]; then
+      # some commit(s) to push
+      if [[ "$commit_behind" -gt "0" ]]; then
+          ret="${PR_COLOR_COMMITS_BEHIND}${branch}${NO_COL}($has_commit)"
+      else
+          ret="${PR_COLOR_COMMITS}${branch}${NO_COL}($has_commit)"
+      fi
+  else
+      ret="${PR_COLOR_UP}${branch}" # nothing to commit or push
+  fi
+}
+
+
+##########
+# DESIGN #
+##########
+# insert a space on the right
+_pr_sr()
+{
+    [[ -n "$1" ]] && echo -nE "$1 "
+}
+
+# insert a space on the left
+_pr_sl()
+{
+    [[ -n "$1" ]] && echo -nE " $1"
+}
+
+
+########################
+# Construct the prompt #
+########################
+# Due to Thales Bash preferences, we can not use PROMPT_COMMAND so we must use
+# multiple function to alow us to display info we want ... too bad :-(
+
+# Check sudo (will change a variable for color only)
+_pr_sudo_check
+
+
+### Construct the prompt line
+# add title escape time, jobs
+PS1="${PR_TIME} \$(_pr_jobcount)"
+# add user, host and permissions colon
+PS1+="${PR_BRACKET_OPEN}${PR_USER}${PR_HOST}\$(_pr_perm)${PR_PWD}${PR_BRACKET_CLOSE}"
+
+# Add VCS infos and prompt mark
+PS1+="\$(_pr_git_branch_color) ${PR_COLOR_MARK}${PR_MARK}${NO_COL} "
+
+# Glue the bash prompt always go to the first column.
+# Avoid glitches after interrupting a command with Ctrl-C
+# Does not seem to be necessary anymore?
+PS1="\[\033[G\]${PS1}${NO_COL}"

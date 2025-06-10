@@ -1,0 +1,13 @@
+[user]
+	email = ${jerome.michel@symphony.com}
+	name = ${USER_GIT_NAME}
+[pull]
+	rebase = true
+[alias]
+	co = checkout
+	br = branch
+	ci = commit
+	st = status
+	cleanup = "!git branch --merged | grep  -v '\\*\\|main\\|dev\\|master\\|develop' | xargs -n 1 -r git branch -d"
+[core]
+	autocrlf = input
